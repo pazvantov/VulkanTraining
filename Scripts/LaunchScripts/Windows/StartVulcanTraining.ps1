@@ -1,0 +1,1 @@
+Start-Process -WindowStyle Hidden code D:\VulkanTraining

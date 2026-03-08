@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <vector>
 #include <cstring>
+#include <optional>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -14,11 +15,25 @@ const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
 
+/* There are different queue families that can only accept a specific command(s) */
+struct QueueFamilyIndices {
+    /* optional mean the variable knows if it has been assigned value or not */
+    std::optional<uint32_t> graphicsFamily;
+
+    bool isComplete() {
+        return graphicsFamily.has_value();
+    }
+};
+
 #ifdef NDEBUG
     const bool enableValidationLayers = false;
 #else
     const bool enableValidationLayers = true;
 #endif
+
+bool checkValidationLayerSupport();
+bool isDeviceSuitable(VkPhysicalDevice device);
+QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
 bool checkValidationLayerSupport() {
     uint32_t layerCount;
@@ -45,6 +60,49 @@ bool checkValidationLayerSupport() {
     return true;
 }
 
+/* Checks if a physical device is suitable for our needs */
+bool isDeviceSuitable(VkPhysicalDevice device) {
+    /* Added the queries needed to get information about the device */
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+    VkPhysicalDeviceFeatures deviceFeatures;
+    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    QueueFamilyIndices indices = findQueueFamilies(device);
+
+    return indices.isComplete();
+}
+
+QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+    /* Assign index to queue families that could be found */
+    QueueFamilyIndices indices;
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    
+    /* The VkQueueFamilyProperties struct contains some details about the queue family,
+        including the type of operations that are supported and the number of queues that can be created based on that family. */
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    int i = 0;
+    for (const auto& queueFamily : queueFamilies) {
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            indices.graphicsFamily = i;
+        }
+        
+        if (indices.isComplete()) {
+            break;
+        }
+
+        i++;
+    }
+
+
+    return indices;
+}
+
 class HelloTriangleApplication {
 public:
     void run() {
@@ -57,6 +115,7 @@ public:
 private:
     GLFWwindow* window;
     VkInstance instance;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
     void initWindow() {
         glfwInit();
@@ -69,7 +128,37 @@ private:
 
     void initVulkan() {
         createInstance();
+        pickPhysicalDevice();
     }
+
+    void pickPhysicalDevice() {
+        uint32_t deviceCount = 0;
+        /* Get the number of physical GPUs which have vulkan support */
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+        if (deviceCount == 0) {
+            throw std::runtime_error("failde to find GPUs with Vulkan support!");
+        }
+
+        std::vector<VkPhysicalDevice> devices(deviceCount);
+        /* Fill the devices array with all of the handles for the physical devices */
+        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+        for (const auto& device : devices) {
+            if (isDeviceSuitable(device)) {
+                physicalDevice = device;
+                break;
+            }
+        }
+
+        /* If no suitable device is found we throw an error */
+        if (physicalDevice == VK_NULL_HANDLE) {
+            throw std::runtime_error("failde to find a suitable GPU!");
+        }
+
+    }
+
+
 
     void createInstance() {
         /* https://vulkan-tutorial.com/en/Drawing_a_triangle/Setup/Instance */
